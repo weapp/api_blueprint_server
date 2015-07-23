@@ -6,18 +6,8 @@ cache = rfr 'lib/cache'
 client = rfr 'lib/github_client'
 settings = rfr 'lib/settings'
 
-exports.index = (req, res) ->
-  dir = req.param('dir')
-  dir = if dir? then "#{dir}/" else ''
-
-  path = "#{dir}#{req.params.file_name}"
-  branch = req.param('branch')
-
-  info = settings.repo_info(branch, path)
-
-  cache_key = "#{info.ref}-#{path}"
-
-  render = (err, file) ->
+render_in = (res, cache_key) ->
+  (err, file) ->
     if err?
       res.send "Error: #{err['message']}"
     else unless file['content']?
@@ -31,6 +21,19 @@ exports.index = (req, res) ->
           cache.set cache_key, html
           res.send html
 
+exports.index = (req, res) ->
+  dir = req.param('dir')
+  dir = if dir? then "#{dir}/" else ''
+
+  path = "#{dir}#{req.params.file_name}"
+  branch = req.param('branch')
+
+  sha = req.param('sha')
+
+  info = settings.repo_info(branch, path)
+
+  cache_key = if sha? then "#{info.ref}-#{path}-#{sha}" else "#{info.ref}-#{path}"
+
   cached = cache.get(cache_key)[cache_key]
 
   if cached
@@ -38,10 +41,13 @@ exports.index = (req, res) ->
     res.send cached
   else
     console.log "Updating cache for path '#{cache_key}'"
-    blob_info = {
-      user: info.user
-      repo: info.repo
-      sha: req.param('sha')
-    }
+    if sha?
+      blob_info = {
+        user: info.user
+        repo: info.repo
+        sha: sha
+      }
 
-    client.gitdata.getBlob blob_info, render
+      client.gitdata.getBlob blob_info, render_in(res)
+    else
+      client.repos.getContent info, render_in(res, cache_key)
